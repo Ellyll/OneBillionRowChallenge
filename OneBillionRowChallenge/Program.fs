@@ -17,7 +17,7 @@ type Summary =
 [<Literal>]
 let path = "/prosiectau/Prosiectau/1brc/1brc/measurements.txt"
 let encoding = System.Text.Encoding.UTF8
-let reader = new StreamReader(path = path, encoding = encoding, detectEncodingFromByteOrderMarks = false, bufferSize = 4096)
+let reader = new StreamReader(path = path, encoding = encoding, detectEncodingFromByteOrderMarks = false, bufferSize = 64 * 1024 ) //4096)
 
 let stopwatch = Stopwatch.StartNew()
 let mutable count = 0
@@ -50,12 +50,12 @@ let results =
         let minVal = kv.Value.Min
         let maxVal = kv.Value.Max
         let meanVal = kv.Value.Sum / float kv.Value.Count
-        sprintf "%s=%.1f/%.1f/%.1f" station minVal meanVal maxVal
+        $"%s{station}=%.1f{minVal}/%.1f{meanVal}/%.1f{maxVal}"
         )
     |> fun xs ->
         "{" + String.Join(", ", xs) + "}"
 
-printfn "%s" results        
+printfn $"%s{results}"        
 
 stopwatch.Stop()
 printfn $"Elapsed: %d{stopwatch.ElapsedMilliseconds}ms / %s{stopwatch.Elapsed.ToString()}"
