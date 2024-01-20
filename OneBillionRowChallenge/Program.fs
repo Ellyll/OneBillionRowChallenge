@@ -4,6 +4,7 @@ open System.Collections.Generic
 open System.Diagnostics
 open System.IO
 open System.IO.MemoryMappedFiles
+open FSharp.Collections.ParallelSeq
 
 // Stop the warning for doing naughty unsafe things uwu
 #nowarn "9"
@@ -136,15 +137,15 @@ let mutable filePtr: nativeptr<byte> = NativePtr.nullPtr<byte>
 accessor.SafeMemoryMappedViewHandle.AcquirePointer(&filePtr)
 
 try
-    let chunkSize = length / (int64 System.Environment.ProcessorCount)
+    let chunkSize = length / (int64 (System.Environment.ProcessorCount/2))
     let chunks = getChunks filePtr chunkSize length
     printfn $"Number of chunks: %d{chunks.Count}"
     let processedChunks =
         chunks
-        |> Seq.mapi (fun i  chunk ->
+        |> PSeq.mapi (fun i  chunk ->
             printfn $"Processing chunk %d{i}"
             processChunk chunk)
-        |> Seq.toList
+        |> PSeq.toList
     let dict = mergeStations processedChunks
 
     let results =
