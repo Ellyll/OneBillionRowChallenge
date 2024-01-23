@@ -63,18 +63,14 @@ let getChunks startingPtr chunkSize fileSize =
 
 let processChunk (chunk: Chunk) =
     let dict = Dictionary<string,Summary>()
-    let mutable stationLength = 0
-    let mutable temperatureLength = 0
-    //let mutable count = 0L
-    let mutable lineStart = 0L
-    let mutable c = 0uy
     let mutable i = 0L
     let mutable filePtr = chunk.StartPtr
+
     while i < chunk.Length do
-        let stationStart = filePtr
-        stationLength <- 0
-        c <- 0uy
-        while i < chunk.Length && c <> ';'B do        
+        let mutable stationStart = filePtr
+        let mutable stationLength = 0
+        let mutable c = 0uy
+        while c <> ';'B do        
             stationLength <- stationLength + 1
             filePtr <- NativePtr.add filePtr 1
             i <- i + 1L
@@ -83,10 +79,10 @@ let processChunk (chunk: Chunk) =
         filePtr <- NativePtr.add filePtr 1
         i <- i + 1L
         
-        let temperatureStart = filePtr
-        temperatureLength <- 0
+        let mutable temperatureStart = filePtr
+        let mutable temperatureLength = 0
         c <- 0uy
-        while i < chunk.Length && c <> '\n'B do
+        while c <> '\n'B && i < chunk.Length do
             temperatureLength <- temperatureLength + 1
             filePtr <- NativePtr.add filePtr 1
             i <- i + 1L
@@ -137,7 +133,11 @@ let mutable filePtr: nativeptr<byte> = NativePtr.nullPtr<byte>
 accessor.SafeMemoryMappedViewHandle.AcquirePointer(&filePtr)
 
 try
-    let chunkSize = length / (int64 (System.Environment.ProcessorCount/2))
+    let processorCount = Environment.ProcessorCount
+    let chunkSize = length / (int64 (processorCount/2))
+    printfn $"processorCount=%d{processorCount}"
+    printfn $"chunkSize=%d{chunkSize}"
+    printfn $"fileSize=%d{length}"
     let chunks = getChunks filePtr chunkSize length
     printfn $"Number of chunks: %d{chunks.Count}"
     let processedChunks =
@@ -149,6 +149,7 @@ try
     let dict = mergeStations processedChunks
 
     let results =
+        printfn "Merging..."
         dict
         |> Seq.sortBy _.Key
         |> Seq.map (fun kv ->
