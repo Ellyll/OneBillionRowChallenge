@@ -67,6 +67,7 @@ let processChunk (chunk: Chunk) =
     let mutable filePtr = chunk.StartPtr
 
     while i < chunk.Length do
+        // Read station name
         let mutable stationStart = filePtr
         let mutable stationLength = 0
         let mutable c = 0uy
@@ -79,19 +80,37 @@ let processChunk (chunk: Chunk) =
         filePtr <- NativePtr.add filePtr 1
         i <- i + 1L
         
-        let mutable temperatureStart = filePtr
-        let mutable temperatureLength = 0
-        c <- 0uy
-        while c <> '\n'B && i < chunk.Length do
-            temperatureLength <- temperatureLength + 1
+        // Read temperature
+        let mutable isNeg = false
+        let mutable temperature = 0.0
+        c <- NativePtr.read filePtr
+        while i < chunk.Length && ((c >= '0'B && c <= '9'B) || c = '-'B) do
+            if c = '-'B then
+                isNeg <- true
+            else
+                temperature <- (temperature * 10.0) + float ((int c) - 48)    
             filePtr <- NativePtr.add filePtr 1
             i <- i + 1L
             c <- NativePtr.read filePtr
-        let temperatureStr = encoding.GetString(temperatureStart, temperatureLength)
-        let temperature = float temperatureStr
+        if i < chunk.Length && c = '.'B then
+            i <- i + 1L
+            filePtr <- NativePtr.add filePtr 1
+            c <- NativePtr.read filePtr
+        let mutable decPlaces = 1.0
+        while i < chunk.Length && c >= '0'B && c <= '9'B do
+            temperature <- temperature + ((10.0 ** (-decPlaces)) * float (c - '0'B))
+            decPlaces <- decPlaces + 1.0
+            i <- i + 1L
+            filePtr <- NativePtr.add filePtr 1
+            c <- NativePtr.read filePtr       
+        if isNeg then
+            temperature <- -temperature
+        
+        // Skip newline
         if i < chunk.Length then
             filePtr <- NativePtr.add filePtr 1
             i <- i + 1L
+
         let summary =
             match dict.TryGetValue stationName with
             | true, value ->
@@ -178,6 +197,7 @@ try
             let meanVal = kv.Value.Sum / float kv.Value.Count
             $"%s{station}=%.1f{minVal}/%.1f{meanVal}/%.1f{maxVal}"
             )
+        |> Seq.toList
         |> fun xs ->
             "{" + String.Join(", ", xs) + "}"
 
