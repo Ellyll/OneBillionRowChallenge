@@ -140,12 +140,31 @@ try
     printfn $"fileSize=%d{length}"
     let chunks = getChunks filePtr chunkSize length
     printfn $"Number of chunks: %d{chunks.Count}"
-    let processedChunks =
+    // let processedChunks =
+    //     chunks
+    //     |> PSeq.mapi (fun i  chunk ->
+    //         printfn $"Processing chunk %d{i}"
+    //         processChunk chunk)
+    //     |> PSeq.toList
+    let chunkResults = Array.zeroCreate<Dictionary<string,Summary> option> chunks.Count
+    let threads =
         chunks
-        |> PSeq.mapi (fun i  chunk ->
-            printfn $"Processing chunk %d{i}"
-            processChunk chunk)
-        |> PSeq.toList
+        |> Seq.mapi (fun i chunk ->
+            new Threading.Thread(fun () ->
+                printfn $"Processing chunk: {chunk.Id}"
+                chunkResults[i] <- Some (processChunk chunk))
+            )
+        |> Seq.toArray
+    for thread in threads do
+        thread.Start()
+        
+    for thread in threads do
+        thread.Join()
+
+    let processedChunks =
+        chunkResults
+        |> Array.choose id
+        
     let dict = mergeStations processedChunks
 
     let results =
