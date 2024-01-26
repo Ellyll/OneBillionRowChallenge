@@ -21,10 +21,8 @@ type Summary =
 type Chunk =
     {
         Id: int
-        StartIndex: int64
-        EndIndex: int64
         StartPtr: nativeptr<byte>
-        Length: int64
+        Length: int
     }
 
 // baseline: 2m43.200s
@@ -38,13 +36,15 @@ let stopwatch = Stopwatch.StartNew()
 
 let getChunks startingPtr chunkSize fileSize =
     let mutable chunkStartPtr = startingPtr
-    let chunks = ResizeArray<Chunk>()
+    let chunks = ResizeArray<Chunk>()    
     let mutable chunkStartIdx = 0L
     let mutable chunkEndIdx = 0L
     let mutable chunkId = 0
+    let maxLineLength = 128L
+    let maxChunkSize = min chunkSize ((int64 Int32.MaxValue) - maxLineLength) // make sure fits in Int32
     while chunkStartIdx < fileSize do
         // find end of chunk by looking for newline
-        chunkEndIdx <- min (chunkStartIdx + chunkSize) (fileSize-1L)
+        chunkEndIdx <- min (chunkStartIdx + maxChunkSize) (fileSize-1L)
         let offset = int (chunkEndIdx - chunkStartIdx)
         let mutable p = NativePtr.add chunkStartPtr offset
         let mutable c : byte = NativePtr.read p
@@ -54,8 +54,12 @@ let getChunks startingPtr chunkSize fileSize =
                 p <- NativePtr.add p 1
                 c <- NativePtr.read p
             else
-                c <- '\n'B            
-        chunks.Add({ Id = chunkId ; StartIndex = chunkStartIdx ; EndIndex = chunkEndIdx ;  StartPtr = chunkStartPtr ; Length = chunkEndIdx - chunkStartIdx })
+                c <- '\n'B
+        let chunkLength = chunkEndIdx - chunkStartIdx
+        if chunkLength > Int32.MaxValue then
+            failwithf $"WARNING - chunk length > %d{Int32.MaxValue}: %d{chunkLength} (chunkId: %d{chunkId}"
+        let chunk = { Id = chunkId ; StartPtr = chunkStartPtr ; Length = int chunkLength }
+        chunks.Add(chunk)
         chunkStartIdx <- chunkEndIdx + 1L
         chunkStartPtr <- NativePtr.add p 1
         chunkId <- chunkId + 1
@@ -63,53 +67,47 @@ let getChunks startingPtr chunkSize fileSize =
 
 let processChunk (chunk: Chunk) =
     let dict = Dictionary<string,Summary>()
-    let mutable i = 0L
-    let mutable filePtr = chunk.StartPtr
+    let mutable i = 0
+    let filePtr = chunk.StartPtr
 
     while i < chunk.Length do
         // Read station name
-        let mutable stationStart = filePtr
+        let mutable stationStart = NativePtr.add filePtr i
         let mutable stationLength = 0
-        let mutable c = 0uy
+        let mutable c = NativePtr.get filePtr i
         while c <> ';'B do        
             stationLength <- stationLength + 1
-            filePtr <- NativePtr.add filePtr 1
-            i <- i + 1L
-            c <- NativePtr.read filePtr
+            i <- i + 1
+            c <- NativePtr.get filePtr i
         let stationName = encoding.GetString(stationStart, stationLength)
-        filePtr <- NativePtr.add filePtr 1
-        i <- i + 1L
+        i <- i + 1
         
         // Read temperature
         let mutable isNeg = false
         let mutable temperature = 0.0
-        c <- NativePtr.read filePtr
+        c <- NativePtr.get filePtr i
         while i < chunk.Length && ((c >= '0'B && c <= '9'B) || c = '-'B) do
             if c = '-'B then
                 isNeg <- true
             else
                 temperature <- (temperature * 10.0) + float ((int c) - 48)    
-            filePtr <- NativePtr.add filePtr 1
-            i <- i + 1L
-            c <- NativePtr.read filePtr
+            i <- i + 1
+            c <- NativePtr.get filePtr i
         if i < chunk.Length && c = '.'B then
-            i <- i + 1L
-            filePtr <- NativePtr.add filePtr 1
-            c <- NativePtr.read filePtr
+            i <- i + 1
+            c <- NativePtr.get filePtr i
         let mutable decPlaces = 1.0
         while i < chunk.Length && c >= '0'B && c <= '9'B do
             temperature <- temperature + ((10.0 ** (-decPlaces)) * float (c - '0'B))
             decPlaces <- decPlaces + 1.0
-            i <- i + 1L
-            filePtr <- NativePtr.add filePtr 1
-            c <- NativePtr.read filePtr       
+            i <- i + 1
+            c <- NativePtr.get filePtr i       
         if isNeg then
             temperature <- -temperature
         
         // Skip newline
         if i < chunk.Length then
-            filePtr <- NativePtr.add filePtr 1
-            i <- i + 1L
+            i <- i + 1
 
         let summary =
             match dict.TryGetValue stationName with
