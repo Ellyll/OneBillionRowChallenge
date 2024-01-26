@@ -183,11 +183,12 @@ try
     let processedChunks =
         chunkResults
         |> Array.choose id
-        
+
+    printfn "Merging..."        
     let dict = mergeStations processedChunks
 
+    printfn "Outputting..."
     let results =
-        printfn "Merging..."
         dict
         |> Seq.sortBy _.Key
         |> Seq.map (fun kv ->
